@@ -1,0 +1,31 @@
+# Personal data — never commit. seen.db is an index of the user's real
+# ~/Downloads and ~/Desktop, which leaks filenames.
+seen.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Undo log will hold real source/destination paths once review.py exists.
+undo_log.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# Editor / env
+.env
+.env.*
+.idea/
+.vscode/
