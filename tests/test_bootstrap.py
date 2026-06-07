@@ -28,9 +28,11 @@ def fake_dirs(tmp_path):
     # Stuff that should NOT be recorded.
     (downloads / ".DS_Store").write_text("x")        # system cruft
     (downloads / ".hidden").write_text("x")           # dotfile
+    # old_project/ itself IS a top-level entry (folders are tracked); its
+    # contents are not, because we never recurse.
     nested = downloads / "old_project"
     nested.mkdir()
-    (nested / "buried.txt").write_text("x")           # top-level only, ignored
+    (nested / "buried.txt").write_text("x")           # buried, ignored
 
     return downloads, desktop
 
@@ -44,12 +46,15 @@ def db(tmp_path):
 
 
 def finder_visible_count(dirs):
-    """How many top-level files Finder would show across `dirs`, after hiding
-    dotfiles. Matches the user-facing definition of 'files in this folder'."""
+    """How many top-level entries (files AND folders) Finder would show
+    across `dirs`, after hiding dotfiles. Matches the user-facing definition
+    of 'things in this folder'."""
     count = 0
     for d in dirs:
         for entry in d.iterdir():
-            if not entry.is_file() or entry.name.startswith("."):
+            if entry.name.startswith("."):
+                continue
+            if not (entry.is_file() or entry.is_dir()):
                 continue
             count += 1
     return count
@@ -64,7 +69,8 @@ def test_row_count_matches_finder(db, fake_dirs):
     rows = db.execute("SELECT COUNT(*) FROM seen_files").fetchone()[0]
     expected = finder_visible_count([downloads, desktop])
 
-    assert rows == expected == 4  # report, song, notes, screenshot
+    # 4 files (report, song, notes, screenshot) + 1 dir (old_project)
+    assert rows == expected == 5
     assert added == expected
     assert already_known == 0
     assert missing == 0

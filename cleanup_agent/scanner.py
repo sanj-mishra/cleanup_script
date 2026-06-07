@@ -6,12 +6,13 @@ IGNORED_NAMES = {".DS_Store", ".localized", ".CFUserTextEncoding"}
 
 
 def scan_top_level(directory):
-    """Yield Path objects for top-level files in `directory`.
+    """Yield Path objects for top-level files AND directories in `directory`.
 
-    Skips subdirectories (no recursion), dotfiles, and known system cruft.
-    Files that disappear between listing and stat'ing are silently skipped —
-    that's a race, not an error. Raises PermissionError if the directory
-    itself is unreadable (caller decides how to surface that)."""
+    Folders are treated as atomic units (no recursion into them) — a project
+    folder dropped on the Desktop is just as much "clutter to triage" as a
+    stray PDF. Skips dotfiles and known system cruft. Entries that vanish
+    between listing and stat'ing are silently skipped. Raises PermissionError
+    if `directory` itself is unreadable."""
     directory = Path(directory).expanduser()
     if not directory.is_dir():
         return
@@ -20,10 +21,10 @@ def scan_top_level(directory):
         if name.startswith(".") or name in IGNORED_NAMES:
             continue
         try:
-            if not entry.is_file():
+            if not (entry.is_file() or entry.is_dir()):
                 continue
         except OSError:
-            # File vanished between iterdir() and stat — race with the user
+            # Entry vanished between iterdir() and stat — race with the user
             # deleting/moving something. Treat as "not there."
             continue
         yield entry
