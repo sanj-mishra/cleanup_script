@@ -85,6 +85,53 @@ A re-scan never overwrites an existing decision — `INSERT OR IGNORE`
 guarantees a `'pending'` row never gets demoted back to `'known'` by a
 later bootstrap.
 
+## Phase 3 (planned): interactive review
+
+Coming next: `python3 -m cleanup_agent.review` for triaging the pending
+queue.
+
+### How it works
+
+Items are reviewed **one at a time, sequentially**, oldest first. Each
+decision is committed immediately, so quitting halfway is safe — already-
+decided items stay decided, and re-running picks up where you left off.
+
+For each item, an Ollama classifier (`llama3` by default, expected at
+`localhost:11434`) suggests a destination based on the existing
+subfolders of `~/Downloads` and `~/Desktop`. Suggestions tagged
+"low confidence" are highlighted so you know to double-check.
+
+### Keys
+
+- `y` — accept the suggestion and move the item.
+
+- `n` — reject. Item stays put; row marked `'rejected'` and won't
+  surface again.
+
+- `e` — edit destination. Type a different path; if it doesn't exist,
+  you'll get a "Create? [y/n]" prompt before proceeding.
+
+- `s` — skip. Decide later; row stays `'pending'` and resurfaces next week.
+
+- `q` — quit the session.
+
+### Defaults and safety
+
+`review.py` runs in **dry-run mode by default**. Add `--apply` to
+actually move files. This inverts the safety default — the dangerous
+mode is always opt-in.
+
+If a file already exists at the destination, the new file gets a
+timestamp suffix instead of overwriting:
+`foo.pdf` → `foo_2026-06-06_18-30-15.pdf`.
+
+Approved moves write to `undo_log.json` so a Phase 4 `undo.py` can
+reverse the most recent session.
+
+`review.py` also calls `prune_missing` at startup, so files moved to
+Trash between weekly cycles disappear from the DB cleanly before the
+review loop begins.
+
 ## Testing
 
 ```bash
