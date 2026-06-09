@@ -71,6 +71,56 @@ def test_message_format(count, expected):
     assert _format_message(count) == expected
 
 
+def test_display_notification_uses_terminal_notifier_when_available(monkeypatch):
+    """If terminal-notifier is on PATH and a click_command is given, use it
+    so the user can click the notification to launch review."""
+    calls = []
+
+    def fake_which(name):
+        return "/fake/terminal-notifier" if name == "terminal-notifier" else None
+
+    def fake_run(args, **kwargs):
+        calls.append(args[0])
+        class _R:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+        return _R()
+
+    from cleanup_agent import notify as notify_mod
+    monkeypatch.setattr(notify_mod.shutil, "which", fake_which)
+    monkeypatch.setattr(notify_mod.subprocess, "run", fake_run)
+
+    notify_mod.display_notification("title", "msg", click_command="echo hi")
+
+    assert calls == ["terminal-notifier"]
+
+
+def test_display_notification_falls_back_to_osascript(monkeypatch):
+    """Without terminal-notifier installed, plain osascript fires the
+    notification (no click action)."""
+    calls = []
+
+    def fake_which(name):
+        return None  # nothing on PATH
+
+    def fake_run(args, **kwargs):
+        calls.append(args[0])
+        class _R:
+            returncode = 0
+            stderr = ""
+            stdout = ""
+        return _R()
+
+    from cleanup_agent import notify as notify_mod
+    monkeypatch.setattr(notify_mod.shutil, "which", fake_which)
+    monkeypatch.setattr(notify_mod.subprocess, "run", fake_run)
+
+    notify_mod.display_notification("title", "msg", click_command="echo hi")
+
+    assert calls == ["osascript"]
+
+
 def test_print_only_cli_does_not_invoke_osascript(tmp_path):
     """End-to-end: --print-only never shells out to osascript, so tests are
     safe to run on a real Mac without popping notifications."""

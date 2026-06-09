@@ -8,6 +8,7 @@ but the 14-day window means a missed week still gets a second chance to
 surface files before they age out."""
 import argparse
 import datetime as dt
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,12 @@ from cleanup_agent.scan import prune_missing, record_new_files
 
 WATCHED_DIRS = [Path.home() / "Downloads", Path.home() / "Desktop"]
 PENDING_WINDOW_DAYS = 14
+
+# Used to build the notification click action — `cd`'ing into project root
+# before invoking `python -m cleanup_agent.launch_review` is required because
+# terminal-notifier spawns the click command from an arbitrary cwd, so the
+# module import wouldn't otherwise resolve.
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def count_pending(conn, window_days=PENDING_WINDOW_DAYS, today=None):
@@ -42,11 +49,36 @@ def _format_message(count):
     return f"{count} new items to review"
 
 
-def display_notification(title, message):
-    """Fire a Mac system notification via osascript. Backslashes and quotes
-    in the strings are escaped so they can't break out of the AppleScript
-    string literal. Failures are reported but don't abort the script — the
-    DB state is already correct; the notification is best-effort."""
+def display_notification(title, message, click_command=None):
+    """Fire a Mac system notification.
+
+    If `terminal-notifier` is installed (brew install terminal-notifier) and
+    a `click_command` is supplied, use it so the user can click the
+    notification to launch review.py. Otherwise fall back to plain
+    osascript, which fires the notification but doesn't support click
+    actions (a known macOS limitation).
+
+    Notification is best-effort — failures are reported but don't abort
+    the script. The DB state is already correct by the time we get here."""
+    if click_command and shutil.which("terminal-notifier"):
+        result = subprocess.run(
+            [
+                "terminal-notifier",
+                "-title", title,
+                "-message", message,
+                "-execute", click_command,
+            ],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(
+                f"warning: terminal-notifier failed (rc={result.returncode}): "
+                f"{result.stderr.strip()}",
+                file=sys.stderr,
+            )
+        return
+
+    # Fallback: plain osascript, no click action.
     def esc(s):
         return s.replace("\\", "\\\\").replace('"', '\\"')
     script = f'display notification "{esc(message)}" with title "{esc(title)}"'
@@ -103,7 +135,15 @@ def main():
     if args.print_only:
         print(f"[notification] {title}: {message}")
     else:
-        display_notification(title, message)
+        # Click action (only used when terminal-notifier is installed):
+        # opens a new Terminal window and runs review.py.
+        # We cd into PROJECT_ROOT so the `-m cleanup_agent.launch_review`
+        # import resolves from terminal-notifier's spawned shell.
+        click_cmd = (
+            f"cd '{PROJECT_ROOT}' && "
+            f"'{sys.executable}' -m cleanup_agent.launch_review"
+        )
+        display_notification(title, message, click_command=click_cmd)
         print(
             f"notified: {message} "
             f"({added} newly discovered, {pruned} pruned this run)"

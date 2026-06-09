@@ -114,6 +114,54 @@ def test_classify_returns_low_when_no_destinations():
     assert confidence == "low"
 
 
+# --- resolve_model: auto-pick whatever's installed ---
+
+def test_resolve_model_exact_match(monkeypatch):
+    monkeypatch.setattr(
+        classifier, "list_installed_models",
+        lambda: ["llama3:latest", "codellama:7b"],
+    )
+    assert classifier.resolve_model("llama3:latest") == "llama3:latest"
+
+
+def test_resolve_model_finds_same_base_name(monkeypatch):
+    """User passes 'llama3', Ollama has 'llama3:latest' — return that."""
+    monkeypatch.setattr(
+        classifier, "list_installed_models",
+        lambda: ["llama3:latest"],
+    )
+    assert classifier.resolve_model("llama3") == "llama3:latest"
+
+
+def test_resolve_model_falls_back_to_prefix(monkeypatch):
+    """The real-world case: user has 'llama3.2:latest' pulled but the
+    script defaults to 'llama3'. Prefix match finds the closest variant
+    so the user doesn't have to pass --model every run."""
+    monkeypatch.setattr(
+        classifier, "list_installed_models",
+        lambda: ["llama3.2:latest", "codellama:7b"],
+    )
+    assert classifier.resolve_model("llama3") == "llama3.2:latest"
+
+
+def test_resolve_model_no_match_returns_input_unchanged(monkeypatch):
+    """If nothing remotely matches, return what the user asked for and
+    let the next API call surface a clear error."""
+    monkeypatch.setattr(
+        classifier, "list_installed_models",
+        lambda: ["codellama:7b"],
+    )
+    assert classifier.resolve_model("llama3") == "llama3"
+
+
+def test_resolve_model_empty_list_returns_input(monkeypatch):
+    monkeypatch.setattr(
+        classifier, "list_installed_models",
+        lambda: [],
+    )
+    assert classifier.resolve_model("llama3") == "llama3"
+
+
 def test_classify_raises_when_ollama_is_down(monkeypatch):
     def _refuse(req, timeout=30):
         raise urllib.error.URLError("connection refused")

@@ -14,6 +14,7 @@ from pathlib import Path
 # 127.0.0.1 instead of localhost: Ollama binds to IPv4 only, and Python's
 # urllib doesn't always fall back from IPv6 cleanly on macOS.
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
+OLLAMA_TAGS_URL = "http://127.0.0.1:11434/api/tags"
 DEFAULT_MODEL = "llama3"
 VALID_CONFIDENCES = ("low", "medium", "high")
 
@@ -79,6 +80,52 @@ def classify(filename, destinations, model=DEFAULT_MODEL, timeout=30):
     if dest in allowed:
         return Path(dest), confidence
     return None, "low"
+
+
+def list_installed_models(timeout=10):
+    """Query Ollama for installed models. Returns the list of full names
+    (with tags), e.g. ['llama3.2:latest', 'codellama:7b']."""
+    req = urllib.request.Request(OLLAMA_TAGS_URL)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read())
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", e)
+        raise OllamaUnreachable(
+            f"Couldn't reach Ollama: {reason}\n"
+            f"  endpoint: {OLLAMA_TAGS_URL}\n"
+            f"  If Ollama isn't running, start it with `ollama serve`."
+        ) from e
+    return [m["name"] for m in payload.get("models", [])]
+
+
+def resolve_model(requested):
+    """Resolve a requested model name to whatever's actually installed.
+
+    Lookup order:
+    1. Exact match — `requested` is in the installed list as-is.
+    2. Same base name — `llama3` finds `llama3:latest`.
+    3. Base-name prefix match — `llama3` finds `llama3.2:latest`.
+    4. No match — return `requested` unchanged and let classify() fail
+       with the existing clear error.
+
+    Saves the user from manually re-specifying `--model llama3.2:latest`
+    every time after Ollama renames or auto-tags their pulled model."""
+    installed = list_installed_models()
+    if not installed:
+        return requested
+    if requested in installed:
+        return requested
+    base = requested.split(":")[0]
+    same_base = [m for m in installed if m.split(":")[0] == base]
+    if same_base:
+        return same_base[0]
+    prefix_match = [m for m in installed if m.split(":")[0].startswith(base)]
+    if prefix_match:
+        # Lexicographically largest is usually the newest version
+        # (llama3.2:latest > llama3.1:latest).
+        return sorted(prefix_match)[-1]
+    return requested
 
 
 def _build_prompt(filename, destinations):

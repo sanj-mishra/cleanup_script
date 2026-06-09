@@ -12,7 +12,12 @@ import functools
 import sys
 from pathlib import Path
 
-from cleanup_agent.classifier import DEFAULT_MODEL, OllamaUnreachable, classify
+from cleanup_agent.classifier import (
+    DEFAULT_MODEL,
+    OllamaUnreachable,
+    classify,
+    resolve_model,
+)
 from cleanup_agent.db import connect, init_schema
 from cleanup_agent.destinations import list_destinations
 from cleanup_agent.mover import perform_move
@@ -235,7 +240,19 @@ def main():
     watched = (
         [Path(w).expanduser() for w in args.watch] if args.watch else WATCHED_DIRS
     )
-    classifier_fn = functools.partial(classify, model=args.model)
+
+    # Auto-resolve the requested model to whatever Ollama actually has
+    # pulled — saves passing --model llama3.2:latest every run when 'llama3'
+    # would do.
+    try:
+        model = resolve_model(args.model)
+    except OllamaUnreachable as e:
+        print(f"error: {e}", file=sys.stderr)
+        raise SystemExit(2)
+    if model != args.model:
+        print(f"using model: {model} (resolved from '{args.model}')")
+    classifier_fn = functools.partial(classify, model=model)
+
     conn = connect(args.db)
     try:
         review_session(
