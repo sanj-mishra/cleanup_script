@@ -1,59 +1,81 @@
 # cleanup-agent
 
-A weekly Mac file organizer for `~/Downloads` and `~/Desktop`. Watches
-for new files and folders, fires a system notification with a count once
-a week, and lets you triage each one interactively with an
+A weekly Mac file organizer for `~/Downloads` and `~/Desktop`. Once a
+week it fires a system notification with a count of new files and
+folders, then lets you triage each one interactively with an
 Ollama-suggested destination.
 
-## Status
+## Quickstart
 
-All four phases complete.
+Your first ten minutes, start to finish.
 
-- `bootstrap.py` — one-time baseline of existing files/folders.
-- `notify.py` — weekly scan + Mac notification with a count of items
-  worth reviewing.
-- `review.py` — interactive triage loop with Ollama classifier.
-- `undo.py` — reverses the most recent review session.
-- `launchd.py` — installs the weekly schedule.
+### 1. Prerequisites
 
-## Setup
+- **Python 3** — no third-party packages, it's all standard library.
+- **Ollama** with a `llama3`-family model, used by the review step to
+  suggest destinations:
+
+  ```bash
+  ollama serve
+  ollama pull llama3        # or llama3.2:latest, etc.
+  ```
+
+### 2. Baseline what's already on disk
+
+Run this once. It records everything currently in `~/Downloads` and
+`~/Desktop` as "known" so future scans only flag genuine new arrivals.
 
 ```bash
-# 1. One-time baseline so future scans only flag genuine new arrivals.
 python3 -m cleanup_agent.bootstrap
-
-# 2. Make sure Ollama is running with a model pulled (for review.py):
-#    ollama serve
-#    ollama pull llama3:latest   # or llama3.2:latest, etc.
-
-# 3. (Optional) Install the weekly schedule — defaults to Mondays 5pm:
-python3 -m cleanup_agent.launchd install
 ```
 
-The SQLite database (`seen.db`) lives at the project root. It's
+This creates `seen.db` (a SQLite file) at the project root. It's
 gitignored because it contains your file paths.
 
-## Usage
+### 3. Install the weekly schedule
 
 ```bash
-# Manual check (also runs every Monday 5pm via launchd if installed):
+python3 -m cleanup_agent.launchd install      # defaults to Mondays 5pm
+```
+
+That's the whole setup. From here on it runs itself. The rest of the
+quickstart shows you what the weekly cycle looks like — you can trigger
+each step by hand to see it now.
+
+### 4. See your first notification
+
+The scheduled job runs `notify`, which scans for new items and fires a
+Mac notification with the count. To see it on demand:
+
+```bash
 python3 -m cleanup_agent.notify
+```
 
-# Triage the pending queue — dry-run by default, --apply to move:
-python3 -m cleanup_agent.review
-python3 -m cleanup_agent.review --apply
+### 5. Run your first review
 
-# Reverse the most recent review session:
-python3 -m cleanup_agent.undo
-python3 -m cleanup_agent.undo --apply
+This is where you actually sort things. It walks the pending items one
+at a time, oldest first, with an Ollama-suggested destination for each.
 
-# Test against a fake directory tree:
-mkdir -p /tmp/cleanup-smoke/Downloads
-touch /tmp/cleanup-smoke/Downloads/{a,b}.txt
-python3 -m cleanup_agent.notify \
-    --db /tmp/cleanup-smoke/test.db \
-    --watch /tmp/cleanup-smoke/Downloads \
-    --print-only
+```bash
+python3 -m cleanup_agent.review              # dry-run: shows moves, changes nothing
+python3 -m cleanup_agent.review --apply      # actually moves files
+```
+
+Per-item keys: `y` accept · `n` reject · `e` edit destination · `s`
+skip · `q` quit. Decisions commit immediately, so quitting halfway is
+safe.
+
+Made a mess? `python3 -m cleanup_agent.undo --apply` reverses the whole
+last session.
+
+## Commands
+
+```bash
+python3 -m cleanup_agent.bootstrap     # one-time baseline of existing items
+python3 -m cleanup_agent.notify        # scan + fire notification with a count
+python3 -m cleanup_agent.review        # interactive triage (dry-run by default)
+python3 -m cleanup_agent.undo          # reverse the most recent review session
+python3 -m cleanup_agent.launchd ...   # install / uninstall / status the schedule
 ```
 
 ### Flags
@@ -88,7 +110,22 @@ Shared by `bootstrap`, `notify`, `review`:
 - `uninstall` — unload + remove plist
 - `status` — show install / load state
 
-## Behavior
+### Try it against a fake directory
+
+Nothing here touches your real folders:
+
+```bash
+mkdir -p /tmp/cleanup-smoke/Downloads
+touch /tmp/cleanup-smoke/Downloads/{a,b}.txt
+python3 -m cleanup_agent.notify \
+    --db /tmp/cleanup-smoke/test.db \
+    --watch /tmp/cleanup-smoke/Downloads \
+    --print-only
+```
+
+---
+
+## How it works
 
 ### What counts as an "item"
 

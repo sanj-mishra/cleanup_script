@@ -1,16 +1,24 @@
 # Next steps
 
-Captured at the end of Phase 4. Not yet started.
+## Done
 
-## 1. Tighten the README for first-time setup
+- **Tightened the README for first-time setup.** Reorganized
+  quickstart-first (prerequisites → bootstrap → schedule → first
+  notification → first review), with the reference material moved below.
 
-The current README documents behavior in depth but reads more like a
-reference than a "first 10 minutes" walkthrough. Reorganize so a brand-new
-user can clone → install deps → bootstrap → install schedule → see their
-first notification → run their first review, without scrolling past
-historical context. The behavior reference can move further down.
+- **Codebase cleanup / dead-end audit.** Audited every module. Findings:
+  the suspected dead ends are actually live and justified, so nothing
+  was removed except one real simplification.
+  - Classifier fallback paths (no-destination, low-confidence) are
+    reachable *and* covered by tests — kept.
+  - `launch_review.py` is wired into the notification click action in
+    `notify.py` and documented as optional — kept.
+  - The `--watch` / `--db` / `--log` overrides back the documented
+    smoke test, not just tests — kept.
+  - **Merged `scanner.py` into `scan.py`** to remove the confusing
+    `scan`-vs-`scanner` naming. The only real change.
 
-## 2. Flip `--dry-run` from default to opt-in
+## 1. Flip `--dry-run` from default to opt-in
 
 `review.py` and `undo.py` currently default to dry-run, requiring
 `--apply` to commit changes. After a few weeks of trusted usage the
@@ -21,19 +29,7 @@ Worth thinking about whether a "first-N-times confirmation" prompt or
 some other middle ground is better than a hard flip — this was a
 deliberate safety default in Phase 3.
 
-## 3. Codebase cleanup: kill dead ends
-
-Audit every module for unused imports, unreachable branches, fall-back
-paths that never get hit, and helpers added for hypothetical needs that
-never materialized. Especially worth scanning:
-
-- The classifier fallback paths (no-destination, low-confidence cascade).
-- `launch_review.py` — only useful if `terminal-notifier` is reinstalled.
-  Worth either deleting or documenting clearly that it's optional.
-- The `--watch` / `--db` / `--log` overrides — do any of these actually
-  get used outside tests?
-
-## 4. Security review
+## 2. Security review
 
 Focused security pass before this gets reused / shared:
 
