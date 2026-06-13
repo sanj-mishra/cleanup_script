@@ -5,7 +5,9 @@ Sequential, oldest-first. Each decision commits immediately, so quitting
 mid-session is safe — already-decided items stay decided, and re-running
 picks up where you left off.
 
-Dry-run by default. Add --apply to actually move files."""
+Moves files by default — but every move still needs an explicit per-item
+keypress. Add --dry-run to preview the whole session without touching
+anything."""
 import argparse
 import datetime as dt
 import functools
@@ -86,7 +88,7 @@ def review_session(conn, watched_dirs, dry_run, log_path=None,
     print(f"Reviewing {len(pending)} pending items in {watched_str}.")
     print("Oldest first. Press 'q' to quit (already-decided items stay decided).")
     if dry_run:
-        print("\n  DRY-RUN — no files will be moved. Add --apply to commit moves.\n")
+        print("\n  DRY-RUN — no files will be moved. Drop --dry-run to commit moves.\n")
     else:
         print()
 
@@ -223,8 +225,8 @@ def main():
         help="Override watched directory (repeatable)"
     )
     parser.add_argument(
-        "--apply", action="store_true",
-        help="Actually move files (default: dry-run — show what would happen)"
+        "--dry-run", action="store_true",
+        help="Preview the session without moving anything (default: moves files)"
     )
     parser.add_argument(
         "--log", help="Path to undo_log.json (default: <project>/undo_log.json)"
@@ -256,7 +258,7 @@ def main():
     conn = connect(args.db)
     try:
         review_session(
-            conn, watched, dry_run=not args.apply, log_path=args.log,
+            conn, watched, dry_run=args.dry_run, log_path=args.log,
             classifier=classifier_fn,
         )
     finally:

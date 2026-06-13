@@ -8,6 +8,7 @@ but the 14-day window means a missed week still gets a second chance to
 surface files before they age out."""
 import argparse
 import datetime as dt
+import shlex
 import shutil
 import subprocess
 import sys
@@ -139,9 +140,11 @@ def main():
         # opens a new Terminal window and runs review.py.
         # We cd into PROJECT_ROOT so the `-m cleanup_agent.launch_review`
         # import resolves from terminal-notifier's spawned shell.
+        # shlex.quote both paths: terminal-notifier runs this through a shell,
+        # so a project path with a space, quote, or `$` must not break out.
         click_cmd = (
-            f"cd '{PROJECT_ROOT}' && "
-            f"'{sys.executable}' -m cleanup_agent.launch_review"
+            f"cd {shlex.quote(str(PROJECT_ROOT))} && "
+            f"{shlex.quote(sys.executable)} -m cleanup_agent.launch_review"
         )
         display_notification(title, message, click_command=click_cmd)
         print(

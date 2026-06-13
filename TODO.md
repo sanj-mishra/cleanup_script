@@ -1,48 +1,43 @@
 # Next steps
 
+All four original follow-ups are done. Nothing outstanding.
+
 ## Done
 
 - **Tightened the README for first-time setup.** Reorganized
   quickstart-first (prerequisites → bootstrap → schedule → first
   notification → first review), with the reference material moved below.
 
-- **Codebase cleanup / dead-end audit.** Audited every module. Findings:
-  the suspected dead ends are actually live and justified, so nothing
-  was removed except one real simplification.
-  - Classifier fallback paths (no-destination, low-confidence) are
-    reachable *and* covered by tests — kept.
-  - `launch_review.py` is wired into the notification click action in
-    `notify.py` and documented as optional — kept.
-  - The `--watch` / `--db` / `--log` overrides back the documented
-    smoke test, not just tests — kept.
-  - **Merged `scanner.py` into `scan.py`** to remove the confusing
-    `scan`-vs-`scanner` naming. The only real change.
+- **Codebase cleanup / dead-end audit.** Audited every module. The
+  suspected dead ends were actually live and justified, so nothing was
+  removed except one real simplification: **merged `scanner.py` into
+  `scan.py`** to kill the confusing `scan`-vs-`scanner` naming.
 
-## 1. Flip `--dry-run` from default to opt-in
+- **Flipped `--dry-run` from default to opt-in.** `review.py` and
+  `undo.py` now do the real work by bare command; `--dry-run` is the
+  explicit preview. `review` still prompts per item, so every move
+  needs an explicit `y` keypress — the flip only changes whether `y`
+  moves or previews.
 
-`review.py` and `undo.py` currently default to dry-run, requiring
-`--apply` to commit changes. After a few weeks of trusted usage the
-extra flag will start feeling like friction. Flip it: bare commands
-do the real work, `--dry-run` is the explicit preview.
+- **Security review.** Findings and fixes:
+  - **Undo log trust boundary (fixed).** `undo.py` now refuses to
+    restore a file outside the watched dirs (`..` normalized away) and
+    rejects malformed / non-list logs. A tampered `undo_log.json` can no
+    longer relocate files into a sensitive writable dir.
+  - **Subprocess hardening (fixed).** The notification click action and
+    the Terminal launcher now `shlex.quote` the project path before
+    embedding it in shell / AppleScript. File names never reach a shell.
+  - **SQL (verified clean).** Every query uses `?` placeholders; nothing
+    string-formats into SQL.
+  - **Edit-flow destination (by design).** The `e` prompt stays
+    unrestricted — it's the live operator choosing where their own file
+    goes. Documented in the README's "Security model" section.
 
-Worth thinking about whether a "first-N-times confirmation" prompt or
-some other middle ground is better than a hard flip — this was a
-deliberate safety default in Phase 3.
+## Possible future ideas
 
-## 2. Security review
+Not planned, just parked:
 
-Focused security pass before this gets reused / shared:
-
-- **Path traversal.** Can `--watch` or destination paths (especially via
-  the `e` edit flow) be crafted to read or write outside intended
-  locations? `Path` arithmetic doesn't sanitize `..`.
-- **Subprocess and shell construction.** `notify.py` and
-  `launch_review.py` build shell commands that get passed to
-  `terminal-notifier`'s `-execute` and to `osascript`. Verify robustness
-  against paths and filenames with quotes, backticks, `$`, etc.
-- **SQLite parameter binding.** All queries should use `?` placeholders;
-  worth confirming none drifted into f-string-built SQL.
-- **Undo log integrity.** `undo_log.json` is plain text. Could a
-  malicious or corrupted entry make `undo.py` move files outside the
-  watched dirs? The destination is derived from the entry's `from`
-  field — that's a trust boundary.
+- A config file for the watched dirs / schedule, instead of constants +
+  flags.
+- Broaden destinations beyond existing subfolders (Documents/Pictures),
+  which was deliberately out of scope in Phase 3.

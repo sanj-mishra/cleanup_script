@@ -49,14 +49,89 @@ def test_empty_log_is_safe(db, tmp_path):
 def test_skip_when_moved_file_no_longer_exists(db, tmp_path):
     """If the user deleted the moved file manually before running undo,
     we can't restore it — skip with a warning instead of crashing."""
+    downloads = tmp_path / "Downloads"
     log = tmp_path / "undo.json"
     _seed_log(log, [{
-        "from": str(tmp_path / "Downloads" / "x.txt"),
+        "from": str(downloads / "x.txt"),
         "to": str(tmp_path / "never_created.txt"),
     }])
-    undone, skipped = undo(db, log, dry_run=False)
+    undone, skipped = undo(db, log, dry_run=False, watched_dirs=[downloads])
     assert undone == 0
     assert skipped == 1
+
+
+# --- security: the log is a trust boundary ---
+
+def test_refuses_restore_outside_watched_dirs(db, tmp_path):
+    """A tampered log whose 'from' points outside the watched dirs (e.g.
+    ~/Library/LaunchAgents for persistence) must be refused — the file is
+    left where it is, not relocated to the attacker-chosen destination."""
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    sensitive = tmp_path / "Library" / "LaunchAgents"
+    sensitive.mkdir(parents=True)
+    moved = downloads / "evil.plist"
+    moved.write_text("payload")
+
+    log = tmp_path / "undo.json"
+    _seed_log(log, [{
+        "from": str(sensitive / "evil.plist"),  # restore destination
+        "to": str(moved),
+    }])
+
+    undone, skipped = undo(db, log, dry_run=False, watched_dirs=[downloads])
+    assert undone == 0
+    assert skipped == 1
+    assert moved.exists()                       # left untouched
+    assert not (sensitive / "evil.plist").exists()  # never written there
+
+
+def test_refuses_dotdot_traversal_in_from(db, tmp_path):
+    """`..` segments can't escape the watched root — the path is resolved
+    before the containment check."""
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    moved = downloads / "x.txt"
+    moved.write_text("data")
+
+    log = tmp_path / "undo.json"
+    _seed_log(log, [{
+        "from": str(downloads / ".." / "outside" / "x.txt"),
+        "to": str(moved),
+    }])
+
+    undone, skipped = undo(db, log, dry_run=False, watched_dirs=[downloads])
+    assert undone == 0
+    assert skipped == 1
+    assert not (outside / "x.txt").exists()
+
+
+def test_skips_malformed_entry(db, tmp_path):
+    """A non-dict or missing-key entry is skipped, not acted on or crashed."""
+    log = tmp_path / "undo.json"
+    _seed_log(log, ["not-a-dict", {"from": str(tmp_path / "Downloads" / "a")}])
+    undone, skipped = undo(db, log, dry_run=False, watched_dirs=[tmp_path])
+    assert undone == 0
+    assert skipped == 2
+
+
+def test_refuses_non_list_log(db, tmp_path):
+    """A log tampered into a JSON object (not a list) is refused outright."""
+    log = tmp_path / "undo.json"
+    log.write_text('{"from": "/etc/x", "to": "/tmp/x"}')
+    undone, skipped = undo(db, log, dry_run=False, watched_dirs=[tmp_path])
+    assert undone == 0
+    assert skipped == 0
+
+
+def test_refuses_invalid_json_log(db, tmp_path):
+    log = tmp_path / "undo.json"
+    log.write_text("{not valid json")
+    undone, skipped = undo(db, log, dry_run=False, watched_dirs=[tmp_path])
+    assert undone == 0
+    assert skipped == 0
 
 
 # --- dry-run ---
@@ -76,7 +151,7 @@ def test_dry_run_does_not_move_or_update_db(db, tmp_path):
         "to": str(moved),
     }])
 
-    undone, _ = undo(db, log, dry_run=True)
+    undone, _ = undo(db, log, dry_run=True, watched_dirs=[downloads])
 
     assert undone == 1
     assert moved.exists()
@@ -104,7 +179,7 @@ def test_apply_moves_file_back_and_updates_db(db, tmp_path):
         "to": str(moved),
     }])
 
-    undone, _ = undo(db, log, dry_run=False)
+    undone, _ = undo(db, log, dry_run=False, watched_dirs=[downloads])
 
     assert undone == 1
     assert (downloads / "foo.pdf").exists()
@@ -127,7 +202,7 @@ def test_apply_wipes_log(db, tmp_path):
         "to": str(dest / "foo.txt"),
     }])
 
-    undo(db, log, dry_run=False)
+    undo(db, log, dry_run=False, watched_dirs=[downloads])
     assert json.loads(log.read_text()) == []
 
 
@@ -148,7 +223,7 @@ def test_walks_reverse_order(db, tmp_path):
         {"from": str(downloads / "b.txt"), "to": str(dest / "b.txt")},
     ])
 
-    undone, _ = undo(db, log, dry_run=False)
+    undone, _ = undo(db, log, dry_run=False, watched_dirs=[downloads])
     assert undone == 2
     assert (downloads / "a.txt").read_text() == "first"
     assert (downloads / "b.txt").read_text() == "second"
@@ -173,7 +248,7 @@ def test_returns_to_now_occupied_path_uses_timestamp_suffix(db, tmp_path):
         "to": str(moved),
     }])
 
-    undone, _ = undo(db, log, dry_run=False)
+    undone, _ = undo(db, log, dry_run=False, watched_dirs=[downloads])
     assert undone == 1
     # The redownload stays put.
     assert redownload.read_text() == "the new download"

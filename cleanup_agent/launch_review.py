@@ -8,6 +8,7 @@ Lives in its own module so we don't have to nest osascript quoting inside
 Python inside a shell string inside another shell string. That way, paths
 containing spaces (like `/Users/foo/My Projects/...`) don't blow up the
 notification click."""
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -16,16 +17,20 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def main():
-    # Inner command for Terminal to execute. Quoted for paths with spaces.
-    # The \" escapes are for AppleScript's string literal.
+    # Two layers of escaping. First shell-quote the paths (shlex.quote) so
+    # the command Terminal runs is shell-safe regardless of spaces, quotes,
+    # `$`, or backticks in the project path. Then escape backslashes and
+    # double-quotes so the whole command survives being embedded inside the
+    # AppleScript `do script "..."` string literal.
     inner_cmd = (
-        f'cd \\"{PROJECT_ROOT}\\" && '
-        f'\\"{sys.executable}\\" -m cleanup_agent.review'
+        f"cd {shlex.quote(str(PROJECT_ROOT))} && "
+        f"{shlex.quote(sys.executable)} -m cleanup_agent.review"
     )
+    escaped = inner_cmd.replace("\\", "\\\\").replace('"', '\\"')
     apple_script = (
         f'tell application "Terminal"\n'
         f'  activate\n'
-        f'  do script "{inner_cmd}"\n'
+        f'  do script "{escaped}"\n'
         f'end tell'
     )
     subprocess.run(["osascript", "-e", apple_script])

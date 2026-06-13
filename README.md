@@ -57,23 +57,23 @@ This is where you actually sort things. It walks the pending items one
 at a time, oldest first, with an Ollama-suggested destination for each.
 
 ```bash
-python3 -m cleanup_agent.review              # dry-run: shows moves, changes nothing
-python3 -m cleanup_agent.review --apply      # actually moves files
+python3 -m cleanup_agent.review              # review and move, one item at a time
+python3 -m cleanup_agent.review --dry-run    # preview the whole session, move nothing
 ```
 
 Per-item keys: `y` accept · `n` reject · `e` edit destination · `s`
-skip · `q` quit. Decisions commit immediately, so quitting halfway is
-safe.
+skip · `q` quit. Nothing moves until you press `y` on that item, and
+each decision commits immediately, so quitting halfway is safe.
 
-Made a mess? `python3 -m cleanup_agent.undo --apply` reverses the whole
-last session.
+Made a mess? `python3 -m cleanup_agent.undo` reverses the whole last
+session.
 
 ## Commands
 
 ```bash
 python3 -m cleanup_agent.bootstrap     # one-time baseline of existing items
 python3 -m cleanup_agent.notify        # scan + fire notification with a count
-python3 -m cleanup_agent.review        # interactive triage (dry-run by default)
+python3 -m cleanup_agent.review        # interactive triage (moves; --dry-run to preview)
 python3 -m cleanup_agent.undo          # reverse the most recent review session
 python3 -m cleanup_agent.launchd ...   # install / uninstall / status the schedule
 ```
@@ -92,7 +92,8 @@ Shared by `bootstrap`, `notify`, `review`:
 
 `review`:
 
-- `--apply` — actually move files (default is dry-run)
+- `--dry-run` — preview the session without moving anything (default is
+  to move; each move still needs a per-item `y`)
 - `--model <name>` — Ollama model tag (default: `llama3`). The script
   auto-resolves to whatever you have pulled, so the default usually
   works even if your actual model is `llama3.2:latest` or similar — you
@@ -101,7 +102,10 @@ Shared by `bootstrap`, `notify`, `review`:
 
 `undo`:
 
-- `--apply` — actually reverse moves (default is dry-run)
+- `--dry-run` — preview the reversal without moving anything (default is
+  to reverse)
+- `--watch <dir>` (repeatable) — restores are refused outside these dirs
+  (default: `~/Downloads` + `~/Desktop`)
 - `--log <path>` — undo log to read from
 
 `launchd`:
@@ -217,11 +221,11 @@ run, so you can only undo the *latest* session — by design, to keep the
 data model simple.
 
 ```bash
-# Preview what would be reversed:
+# Reverse the last session:
 python3 -m cleanup_agent.undo
 
-# Actually reverse:
-python3 -m cleanup_agent.undo --apply
+# Preview what would be reversed without touching anything:
+python3 -m cleanup_agent.undo --dry-run
 ```
 
 If a returned file's original location is now occupied (e.g., you
@@ -266,6 +270,33 @@ brew install terminal-notifier
 `notify.py` auto-detects it and switches to the clickable path. Without
 it, you'll still see the notification — it's just informational, and
 you'd run `python3 -m cleanup_agent.review` manually.
+
+## Security model
+
+The agent runs locally on your own files, so the operator is trusted —
+but a few inputs are treated as boundaries worth guarding:
+
+- **The undo log is a trust boundary.** `undo_log.json` is plain text,
+  and each entry's `from` field decides where a file gets written on
+  restore. A tampered or corrupted log could otherwise relocate files
+  into a sensitive writable directory (e.g. `~/Library/LaunchAgents`).
+  `undo.py` resolves each restore path and **refuses any restore that
+  lands outside the watched dirs** (`..` segments are normalized away
+  first), and skips malformed or non-list logs entirely.
+
+- **SQL is always parameterized.** Every query uses `?` placeholders —
+  no path or filename is ever string-formatted into SQL.
+
+- **Shell strings are quoted.** The notification click action and the
+  Terminal launcher build shell/AppleScript commands from the project
+  path; both `shlex.quote` the paths so spaces, quotes, `$`, or
+  backticks can't break out. File *names* never reach a shell at all —
+  they're only ever passed to SQLite (parameterized) and `shutil.move`.
+
+- **The `e` (edit) destination is intentionally unrestricted.** That
+  prompt is the live operator choosing where their own file goes, so it
+  accepts any path — unlike the classifier, which can only suggest
+  existing subfolders of the watched dirs.
 
 ## Testing
 
