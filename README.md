@@ -130,6 +130,16 @@ weekly notification stops appearing.
 notification clickable (opens Terminal and runs review). Without it the
 notification is informational and you run review manually.
 
+**Sticky reminders (optional).** By default macOS notifications are
+*temporary* — they slide away after a few seconds, easy to miss. To make
+the weekly notification stay until you dismiss it (reminder-style),
+install `terminal-notifier` (above), fire it once
+(`python3 -m cleanup_agent.notify`) so it registers, then in **System
+Settings → Notifications → terminal-notifier** set **Alert Style** to
+**Persistent**. That style toggle is the entire mechanism — nothing in
+the code controls it. Note the app only appears in that list *after* it
+has delivered at least one notification, so fire it before looking.
+
 ## Security model
 
 The agent runs locally on your own files, so the operator is trusted —
