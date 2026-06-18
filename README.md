@@ -55,6 +55,7 @@ Per-item keys:
 - `n` — reject; won't surface again
 - `e` — edit destination; offers to create it if it doesn't exist
 - `s` — skip; resurfaces next week
+- `p` — preview the item in macOS Quick Look (close the window to continue)
 - `q` — quit
 
 Nothing moves until you press `y` on that item, and each decision commits

@@ -57,6 +57,7 @@ class _FakePrompter:
         self.actions = list(actions)
         self.destinations = list(destinations or [])
         self.creates = list(creates or [])
+        self.previewed = []
 
     def ask_action(self):
         return self.actions.pop(0)
@@ -66,6 +67,10 @@ class _FakePrompter:
 
     def confirm_create(self, dest):
         return self.creates.pop(0)
+
+    def preview(self, path):
+        # Record the request instead of popping a real Quick Look window.
+        self.previewed.append(path)
 
 
 def _make_pending(downloads, name):
@@ -111,6 +116,29 @@ def test_accepting_suggestion_moves_file_and_marks_approved(db, tmp_path):
         "SELECT path, decision FROM seen_files WHERE path = ?", (str(moved),)
     ).fetchone()
     assert row == (str(moved), "approved")
+
+
+def test_preview_is_non_terminal_then_decision_applies(db, tmp_path):
+    """'p' should preview the current item and loop back to the same prompt,
+    so a following 'y' still moves it. Preview never consumes the decision."""
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    target = _known_subfolder(db, downloads, "receipts")
+    item = _make_pending(downloads, "receipt.pdf")
+    _seed_pending(db, [item])
+
+    prompter = _FakePrompter(actions=["p", "y"])
+    review_session(
+        db, [downloads], dry_run=False, log_path=tmp_path / "undo.json",
+        classifier=lambda name, dests: (target, "high"),
+        prompter=prompter,
+    )
+
+    # Previewed exactly the item under review...
+    assert prompter.previewed == [item]
+    # ...and the later 'y' still moved it.
+    assert not item.exists()
+    assert (target / "receipt.pdf").read_text() == "data"
 
 
 def test_rejecting_leaves_file_in_place_and_marks_rejected(db, tmp_path):

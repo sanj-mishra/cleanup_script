@@ -11,6 +11,8 @@ anything."""
 import argparse
 import datetime as dt
 import functools
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -169,6 +171,11 @@ def _handle_choice(item, suggested, conn, dry_run, log, stats, prompter):
             stats["skipped"] += 1
             print("       skipped (decide later)")
             return True
+        if choice == "p":
+            # Non-terminal: peek, then fall back to the same prompt so the
+            # user still has to pick a real action for this item.
+            prompter.preview(item)
+            continue
         if choice == "q":
             print("       quitting")
             return False
@@ -197,14 +204,38 @@ class _interactive_prompter:
     """Wraps stdin prompts so tests can inject deterministic answers."""
 
     def ask_action(self):
-        valid = {"y", "n", "e", "s", "q"}
+        valid = {"y", "n", "e", "s", "p", "q"}
         while True:
             raw = input(
-                "       [y]es  [n]o  [e]dit  [s]kip  [q]uit  > "
+                "       [y]es  [n]o  [e]dit  [s]kip  [p]review  [q]uit  > "
             ).strip().lower()
             if raw in valid:
                 return raw
-            print("       (please enter y, n, e, s, or q)")
+            print("       (please enter y, n, e, s, p, or q)")
+
+    def preview(self, path):
+        """Pop a macOS Quick Look window for `path` (the 'p' action).
+
+        Blocks until the preview is closed — that's the intended flow:
+        peek, dismiss, then decide. Mirrors notify.py's shell-out style:
+        confirm the tool with shutil.which first, capture its (noisy)
+        output, and surface a non-zero exit instead of swallowing it."""
+        if not Path(path).exists():
+            print("       (can't preview — file is no longer there)")
+            return
+        if not shutil.which("qlmanage"):
+            print("       (preview unavailable — qlmanage not found)")
+            return
+        print("       opening preview… (close the Quick Look window to continue)")
+        result = subprocess.run(
+            ["qlmanage", "-p", str(path)],
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(
+                f"       preview failed: {result.stderr.strip()}",
+                file=sys.stderr,
+            )
 
     def ask_destination(self):
         raw = input("       Enter destination: ").strip()
